@@ -1,0 +1,77 @@
+import time
+import board
+import adafruit_dht
+import RPi.GPIO as GPIO
+import cv2
+
+dht_pin = board.D4
+dht_sensor = adafruit_dht.DHT11(dht_pin)
+
+TRIG = 23
+ECHO = 24
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(TRIG, GPIO.OUT)
+GPIO.setup(ECHO, GPIO.IN)
+
+camera = cv2.VideoCapture(0)
+
+if not camera.isOpened():
+    print("Error: Cannot access the camera.")
+    exit()
+
+def measure_distance():
+    GPIO.output(TRIG, False)
+    time.sleep(0.1)
+    GPIO.output(TRIG, True)
+    time.sleep(0.00001)
+    GPIO.output(TRIG, False)
+    while GPIO.input(ECHO) == 0:
+        pulse_start = time.time()
+    while GPIO.input(ECHO) == 1:
+        pulse_end = time.time()
+    pulse_duration = pulse_end - pulse_start
+    distance = pulse_duration * 17150
+    return round(distance, 2)
+
+try:
+    while True:
+        try:
+            temperature = dht_sensor.temperature
+            humidity = dht_sensor.humidity
+            if temperature is not None and humidity is not None:
+                print(f"DHT11 - Temp: {temperature}°C, Humidity: {humidity}%")
+            else:
+                print("DHT11 Sensor not responding.")
+        except RuntimeError as e:
+            print(f"DHT11 RuntimeError: {e}")
+
+        try:
+            distance = measure_distance()
+            print(f"Ultrasonic Sensor - Distance: {distance} cm")
+        except Exception as e:
+            print(f"Ultrasonic Sensor Error: {e}")
+
+        ret, frame = camera.read()
+        if not ret:
+            print("Camera Error: Unable to capture video.")
+            break
+
+        cv2.putText(frame, f"Temp: {temperature}C, Humidity: {humidity}%, Dist: {distance}cm",
+                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        cv2.imshow('Camera Feed', frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+        time.sleep(2)
+
+except KeyboardInterrupt:
+    print("Program stopped by the user.")
+except Exception as e:
+    print(f"Unexpected Error: {e}")
+
+finally:
+    camera.release()
+    cv2.destroyAllWindows()
+    GPIO.cleanup()
+    dht_sensor.exit()
